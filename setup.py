@@ -19,7 +19,9 @@ setup(
     license='TODO: License declaration',
     tests_require=['pytest'],
     entry_points={
-        'console_scripts': ['computer_vision_node = perception.computer_vision_node:main'
+        'console_scripts': ['computer_vision_node = perception.computer_vision_node:main',
+                            'computer_vision_node2 = perception.computer_vision_node2:main',
+                            'computer_vision_node3 = perception.computer_vision_node3:main'
         ],
     },
 )

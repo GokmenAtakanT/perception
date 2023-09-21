@@ -1,50 +1,3 @@
-
-# import cv2
-# from rclpy.node import Node 
-# from cv_bridge import CvBridge 
-# from sensor_msgs.msg import Image 
-# import rclpy 
-
-
-# class Video_feed_in(Node):
-#     def __init__(self):
-
-#         super().__init__('video_subscriber')
-#         self.subscriber = self.create_subscription(Image,'/carla/ego_vehicle/rgb_front/image',self.process_data,10)
-#         self.bridge   = CvBridge() # converting ros images to opencv data
- 
-
-        
-#     def process_data(self, data): 
-#         """Processes the data stream from the sensor (camera) and passes on to the 
-#            Self Drive Algorithm which computes and executes the appropriate control
-#            (Steering and speed) commands.
-
-#         Args:
-#             data (img_msg): image data from the camera received as a ros message
-#         """
-#         #self.Debug.setDebugParameters()
-
-#         frame = self.bridge.imgmsg_to_cv2(data,'bgr8') # performing conversion
-
-#         #Angle,Speed,img = self.Car.driveCar(frame)
-
-#         #self.velocity.angular.z = Angle
-#         #self.velocity.linear.x = Speed      
-
-#         cv2.imshow("Frame",frame)
-#         cv2.waitKey(1)
-        
- 
-# def main(args=None):
-#   rclpy.init(args=args)
-#   image_subscriber = Video_feed_in()
-#   rclpy.spin(image_subscriber)
-#   rclpy.shutdown()
-
-# if __name__ == '__main__':
-# 	main()
-
 import cv2
 from rclpy.node import Node 
 from cv_bridge import CvBridge 
@@ -61,42 +14,103 @@ class Video_feed_in(Node):
     def process_data(self, data): 
         frame = self.bridge.imgmsg_to_cv2(data,'bgr8') # performing conversion
 
-        # Define the color mappings
-        classes = {
-            #0: [0, 0, 0],         # None
-            #1: [70, 70, 70],      # Buildings
-            #2: [190, 153, 153],   # Fences
-            #3: [72, 0, 90],       # Other
-            #4: [220, 20, 60],     # Pedestrians
-            #5: [153, 153, 153],   # Poles
-            #6: [157, 234, 50],    # RoadLines
-            #7: [128, 64, 128],    # Roads
-            #8: [244, 35, 232],    # Sidewalks
-            #9: [107, 142, 35],    # Vegetation
-            #10: [0, 0, 255],      # Vehicles
-            #11: [102, 102, 156],  # Walls
-            12: [220, 220, 0]     # TrafficSigns
-        }
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        img = frame
+        cimg = img
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
-        # Create masks for each class
-        masks = {}
-        for class_id, color in classes.items():
-            lower_bound = np.array(color, dtype=np.uint8)
-            upper_bound = np.array(color, dtype=np.uint8)
-            mask = cv2.inRange(frame, lower_bound, upper_bound)
-            masks[class_id] = mask
+        # color range
+        lower_red1 = np.array([0,100,100])
+        upper_red1 = np.array([10,255,255])
+        lower_red2 = np.array([160,100,100])
+        upper_red2 = np.array([180,255,255])
+        lower_green = np.array([40,50,50])
+        upper_green = np.array([90,255,255])
+        lower_yellow = np.array([15,150,150])
+        upper_yellow = np.array([35,255,255])
+        mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
+        mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
+        maskg = cv2.inRange(hsv, lower_green, upper_green)
+        masky = cv2.inRange(hsv, lower_yellow, upper_yellow)
+        maskr = cv2.add(mask1, mask2)
 
-        # Find contours and draw bounding boxes for each class
-        for class_id, mask in masks.items():
-            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            for contour in contours:
-                x, y, w, h = cv2.boundingRect(contour)
-                class_name = str(class_id)
-                color = classes[class_id]
-                cv2.rectangle(frame, (x, y), (x + w, y + h), color, 5)
-                cv2.putText(frame, class_name, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+        size = img.shape
 
-        cv2.imshow("Frame", frame)
+        r = 5
+        bound = 4.0 / 10
+
+        # hough circle detect
+        r_circles = cv2.HoughCircles(maskr, cv2.HOUGH_GRADIENT, 1, 80,
+                                    param1=50, param2=10, minRadius=0, maxRadius=30)
+
+        g_circles = cv2.HoughCircles(maskg, cv2.HOUGH_GRADIENT, 1, 60,
+                                    param1=50, param2=10, minRadius=0, maxRadius=30)
+
+        y_circles = cv2.HoughCircles(masky, cv2.HOUGH_GRADIENT, 1, 30,
+                                    param1=50, param2=5, minRadius=0, maxRadius=30)
+
+        # traffic light detect
+        if r_circles is not None:
+            r_circles = np.uint16(np.around(r_circles))
+
+            for i in r_circles[0, :]:
+                if i[0] > size[1] or i[1] > size[0]or i[1] > size[0]*bound:
+                    continue
+
+                h, s = 0.0, 0.0
+                for m in range(-r, r):
+                    for n in range(-r, r):
+
+                        if (i[1]+m) >= size[0] or (i[0]+n) >= size[1]:
+                            continue
+                        h += maskr[i[1]+m, i[0]+n]
+                        s += 1
+                if h / s > 50:
+                    cv2.circle(cimg, (i[0], i[1]), i[2]+10, (0, 255, 0), 2)
+                    cv2.circle(maskr, (i[0], i[1]), i[2]+30, (255, 255, 255), 2)
+                    cv2.putText(cimg,'RED',(i[0], i[1]), font, 1,(255,0,0),2,cv2.LINE_AA)
+
+        if g_circles is not None:
+            g_circles = np.uint16(np.around(g_circles))
+
+            for i in g_circles[0, :]:
+                if i[0] > size[1] or i[1] > size[0] or i[1] > size[0]*bound:
+                    continue
+
+                h, s = 0.0, 0.0
+                for m in range(-r, r):
+                    for n in range(-r, r):
+
+                        if (i[1]+m) >= size[0] or (i[0]+n) >= size[1]:
+                            continue
+                        h += maskg[i[1]+m, i[0]+n]
+                        s += 1
+                if h / s > 100:
+                    cv2.circle(cimg, (i[0], i[1]), i[2]+10, (0, 255, 0), 2)
+                    cv2.circle(maskg, (i[0], i[1]), i[2]+30, (255, 255, 255), 2)
+                    cv2.putText(cimg,'GREEN',(i[0], i[1]), font, 1,(255,0,0),2,cv2.LINE_AA)
+
+        if y_circles is not None:
+            y_circles = np.uint16(np.around(y_circles))
+
+            for i in y_circles[0, :]:
+                if i[0] > size[1] or i[1] > size[0] or i[1] > size[0]*bound:
+                    continue
+
+                h, s = 0.0, 0.0
+                for m in range(-r, r):
+                    for n in range(-r, r):
+
+                        if (i[1]+m) >= size[0] or (i[0]+n) >= size[1]:
+                            continue
+                        h += masky[i[1]+m, i[0]+n]
+                        s += 1
+                if h / s > 50:
+                    cv2.circle(cimg, (i[0], i[1]), i[2]+10, (0, 255, 0), 2)
+                    cv2.circle(masky, (i[0], i[1]), i[2]+30, (255, 255, 255), 2)
+                    cv2.putText(cimg,'YELLOW',(i[0], i[1]), font, 1,(255,0,0),2,cv2.LINE_AA)
+
+        cv2.imshow('detected results', cimg)
         cv2.waitKey(1)
 
 def main(args=None):
@@ -107,3 +121,4 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
+
